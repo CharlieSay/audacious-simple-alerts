@@ -3,30 +3,43 @@
 
 import { useState, useEffect } from 'react'
 
+interface QueuedMessage {
+  id: string;
+  message: string;
+  timestamp: number;
+  sender: string;
+}
+
 export default function AdminPage() {
-  const [messages, setMessages] = useState<string[]>([])
+  const [messages, setMessages] = useState<QueuedMessage[]>([])
   const [newMessage, setNewMessage] = useState('')
+  const [userName, setUserName] = useState('')
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    fetch('/api/messages')
-      .then(res => res.json())
-      .then(data => setMessages(data))
-      .catch(err => {
-        console.error('Error fetching messages:', err)
-        setError('Failed to load messages')
-      })
+    const eventSource = new EventSource('/api/messages')
+
+    eventSource.onmessage = (event) => {
+      if (event.data === 'CLEAR_SCREEN') {
+        setMessages([])
+      } else {
+        const message = JSON.parse(event.data)
+        setMessages(prev => [...prev, message])
+      }
+    }
+
+    return () => eventSource.close()
   }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!newMessage.trim()) return
+    if (!newMessage.trim() || !userName.trim()) return
 
     try {
       const res = await fetch('/api/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: newMessage }),
+        body: JSON.stringify({ message: newMessage, sender: userName }),
       })
 
       if (!res.ok) {
@@ -36,7 +49,6 @@ export default function AdminPage() {
 
       const data = await res.json()
       if (data.success) {
-        setMessages(prev => [...prev, newMessage])
         setNewMessage('')
         setError(null)
       } else {
@@ -75,8 +87,17 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-900 p-4">
-      <h1 className="text-2xl font-bold mb-4">Admin Panel</h1>
+    <div className="min-h-screen bg-slate-900 p-4 text-white">
+      <div className="flex items-center mb-4">
+        <h1 className="text-2xl font-bold mr-4">Admin Panel</h1>
+        <input
+          type="text"
+          value={userName}
+          onChange={(e) => setUserName(e.target.value)}
+          className="p-2 border rounded text-black"
+          placeholder="Your Name"
+        />
+      </div>
       {error && <p className="text-red-500 mb-4">{error}</p>}
       <form onSubmit={handleSubmit} className="mb-4">
         <input
@@ -97,10 +118,16 @@ export default function AdminPage() {
         Clear Screen
       </button>
       <div>
-        <h2 className="text-xl font-semibold mb-2">Previous Messages:</h2>
+        <h2 className="text-xl font-semibold mb-2">Message Queue:</h2>
         <ul className="space-y-2">
-          {messages.map((msg, index) => (
-            <li key={index} className="bg-slate-500 p-2 rounded shadow">{msg}</li>
+          {messages.map((msg) => (
+            <li key={msg.id} className="bg-white flex justify-between p-2 rounded shadow text-slate-900">
+              <p className="font-semibold">{msg.message}</p>
+              <p className="text-sm text-slate-800">
+                Sent by: <span className='font-semibold'>{msg.sender}</span>{' '}
+                <span className='font-semibold'>{new Date(msg.timestamp).toLocaleString()}</span>
+              </p>
+            </li>
           ))}
         </ul>
       </div>

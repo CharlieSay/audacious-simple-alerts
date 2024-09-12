@@ -1,6 +1,15 @@
+// app/api/messages/route.ts
 import { NextResponse } from 'next/server';
 
-let messages: string[] = [];
+interface QueuedMessage {
+  id: string;
+  message: string;
+  timestamp: number;
+  sender: string;
+}
+
+let messageQueue: QueuedMessage[] = [];
+let currentMessageIndex = 0;
 let clients: ReadableStreamDefaultController<Uint8Array>[] = [];
 
 export async function GET() {
@@ -10,12 +19,14 @@ export async function GET() {
       console.log('New client connected');
       clients.push(controller);
 
-      const encoder = new TextEncoder();
-      messages.forEach((msg) => {
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(msg)}\n\n`));
-      });
-
-      console.log(`Sent ${messages.length} existing messages to new client`);
+      // Send current message to the new client if exists
+      if (messageQueue.length > 0) {
+        const encoder = new TextEncoder();
+        const currentMessage = messageQueue[currentMessageIndex];
+        controller.enqueue(
+          encoder.encode(`data: ${JSON.stringify(currentMessage)}\n\n`)
+        );
+      }
     },
     cancel() {
       console.log('Client disconnected');
@@ -40,7 +51,8 @@ export async function POST(req: Request) {
 
     if (body.action === 'clear') {
       console.log('Clearing screen');
-      messages = [];
+      messageQueue = [];
+      currentMessageIndex = 0;
       const encoder = new TextEncoder();
       const clearMessage = encoder.encode(`data: CLEAR_SCREEN\n\n`);
       clients.forEach((client) => {
@@ -57,7 +69,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true, action: 'clear' });
     }
 
-    if (!body || typeof body.message !== 'string') {
+    if (
+      !body ||
+      typeof body.message !== 'string' ||
+      typeof body.sender !== 'string'
+    ) {
       console.error('Invalid message format');
       return NextResponse.json(
         { error: 'Invalid message format' },
@@ -65,15 +81,42 @@ export async function POST(req: Request) {
       );
     }
 
-    const { message } = body;
-    console.log('Processing message:', message);
-    messages.push(message);
+    const { message, sender } = body;
+    console.log('Processing message:', message, 'from', sender);
 
+    const newMessage: QueuedMessage = {
+      id: Date.now().toString(),
+      message,
+      timestamp: Date.now(),
+      sender,
+    };
+    messageQueue.push(newMessage);
+
+    if (messageQueue.length === 1) {
+      // If this is the first message, send it immediately
+      sendNextMessage();
+    }
+
+    return NextResponse.json({
+      success: true,
+      queuePosition: messageQueue.length - 1,
+    });
+  } catch (error) {
+    console.error('Error processing message:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+
+function sendNextMessage() {
+  if (currentMessageIndex < messageQueue.length) {
     const encoder = new TextEncoder();
+    const message = messageQueue[currentMessageIndex];
     const encodedMessage = encoder.encode(
       `data: ${JSON.stringify(message)}\n\n`
     );
-    console.log('Sending message to clients:', message);
 
     clients.forEach((client) => {
       try {
@@ -84,12 +127,8 @@ export async function POST(req: Request) {
       }
     });
 
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error('Error processing message:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    currentMessageIndex++;
+
+    setTimeout(sendNextMessage, 1500);
   }
 }

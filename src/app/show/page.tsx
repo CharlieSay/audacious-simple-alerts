@@ -1,79 +1,78 @@
-// app/show/page.tsx
-'use client';
+'use client'
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react'
+
+interface QueuedMessage {
+  id: string;
+  message: string;
+  timestamp: number;
+  sender: string;
+}
 
 export default function ShowPage() {
-  const [messages, setMessages] = useState<string[]>([]);
-  const [textColor, setTextColor] = useState('text-white');
+  const [currentMessage, setCurrentMessage] = useState<QueuedMessage | null>(null)
+  const [textColor, setTextColor] = useState('text-white')
 
   const flashMessage = useCallback(() => {
-    let flashCount = 0;
+    let flashCount = 0
     const flashInterval = setInterval(() => {
-      setTextColor((prev) =>
-        prev === 'text-white' ? 'text-red-500' : 'text-white'
-      );
-      flashCount++;
-      if (flashCount >= 15) {
-        // 15 flashes over 3 seconds
-        clearInterval(flashInterval);
-        setTextColor('text-white');
+      setTextColor(prev => prev === 'text-white' ? 'text-red-500' : 'text-white')
+      flashCount++
+      if (flashCount >= 15) { // 15 flashes over 3 seconds
+        clearInterval(flashInterval)
+        setTextColor('text-white')
       }
-    }, 200); // Flash every 200ms
+    }, 200) // Flash every 200ms
 
-    return () => clearInterval(flashInterval);
-  }, []);
+    return () => clearInterval(flashInterval)
+  }, [])
 
   useEffect(() => {
-    console.log('Setting up EventSource');
-    const eventSource = new EventSource('/api/messages');
+    console.log('Setting up EventSource')
+    const eventSource = new EventSource('/api/messages')
 
     eventSource.onopen = () => {
-      console.log('EventSource connection opened');
-    };
+      console.log('EventSource connection opened')
+    }
 
     eventSource.onerror = (error) => {
-      console.error('EventSource error:', error);
-    };
+      console.error('EventSource error:', error)
+    }
 
     eventSource.onmessage = (event) => {
-      console.log('Received message:', event.data);
+      console.log('Received message:', event.data)
       if (event.data === 'CLEAR_SCREEN') {
-        setMessages([]);
-        return;
+        setCurrentMessage(null)
+        return
       }
       try {
-        const newMessage = JSON.parse(event.data);
-        console.log('Parsed message:', newMessage);
-        setMessages((prevMessages) => {
-          const updatedMessages = [...prevMessages, newMessage];
-          console.log('Updated messages:', updatedMessages);
-          return updatedMessages;
-        });
-        flashMessage();
+        const newMessage: QueuedMessage = JSON.parse(event.data)
+        console.log('Parsed message:', newMessage)
+        setCurrentMessage(newMessage)
+        flashMessage()
       } catch (error) {
-        console.error('Error parsing message:', error);
+        console.error('Error parsing message:', error)
       }
-    };
+    }
 
     return () => {
-      console.log('Closing EventSource');
-      eventSource.close();
-    };
-  }, [flashMessage]);
+      console.log('Closing EventSource')
+      eventSource.close()
+    }
+  }, [flashMessage])
 
   return (
     <div className="flex flex-col justify-between h-screen bg-black">
       <div className="flex-grow flex items-center justify-center">
-        {messages.length > 0 && (
+        {currentMessage && (
           <h1
             className={`text-7xl font-bold transition-colors duration-100 ${textColor}`}
           >
-            {messages[messages.length - 1].toUpperCase()}
+            {currentMessage.message.toUpperCase()}
           </h1>
         )}
       </div>
-      <div className="flex justify-center">
+     <div className="flex justify-center">
         <svg
           xmlns="http://www.w3.org/2000/svg"
           width="358"
@@ -86,5 +85,6 @@ export default function ShowPage() {
         </svg>
       </div>
     </div>
-  );
+  )
 }
+
